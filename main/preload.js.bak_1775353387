@@ -1,0 +1,6 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+// Preload necessário para contextIsolation=false
+contextBridge.exposeInMainWorld('electronAPI', {
+  onDeepLink: (callback) => ipcRenderer.on('deep-link', callback)
+});

@@ -1,0 +1,51 @@
+const { app, BrowserWindow, ipcMain } = require('electron');
+const path = require('path');
+
+let mainWindow;
+let deepLinkNote = null;
+
+// Evita múltiplas instâncias
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (event, argv) => {
+    // Se houver segunda instância, verifica deep link
+    const deepArg = argv.find(arg => arg.startsWith('trilium://'));
+    if (deepArg && mainWindow) {
+      mainWindow.webContents.send('deep-link', deepArg);
+      mainWindow.focus();
+    }
+  });
+}
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 900,
+    height: 700,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: true,
+      contextIsolation: false
+    }
+  });
+
+  mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+
+  // Processa deep link passado no start
+  const deepArg = process.argv.find(arg => arg.startsWith('trilium://'));
+  if (deepArg) {
+    mainWindow.webContents.on('did-finish-load', () => {
+      mainWindow.webContents.send('deep-link', deepArg);
+    });
+  }
+}
+
+app.whenReady().then(() => {
+  createWindow();
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});
