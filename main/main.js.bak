@@ -1,0 +1,60 @@
+const { app, BrowserWindow, ipcMain } = require('electron');
+const path = require('path');
+const Database = require('better-sqlite3');
+
+let mainWindow;
+
+// Abrir DB do Trilium
+const dbPath = path.join(app.getPath('home'), '.config/trilium-data/trilium-data.db');
+const db = new Database(dbPath, { readonly: true });
+
+// Criar janela principal
+function createWindow() {
+    mainWindow = new BrowserWindow({
+        width: 1200,
+        height: 800,
+        webPreferences: {
+            preload: path.join(__dirname, 'preload.js'),
+            nodeIntegration: false,
+            contextIsolation: true
+        }
+    });
+
+    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+
+    // Processar deep links se abrir via trilium://
+    const deepLinkArg = process.argv.find(arg => arg.startsWith("trilium://note/"));
+    if (deepLinkArg) {
+        const noteId = deepLinkArg.replace("trilium://note/", "");
+        mainWindow.webContents.once('did-finish-load', () => {
+            mainWindow.webContents.send('open-note', noteId);
+        });
+    }
+}
+
+// Garantir single instance
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) app.quit();
+
+app.on('second-instance', (event, argv) => {
+    const deepLinkArg = argv.find(arg => arg.startsWith("trilium://note/"));
+    if (deepLinkArg) {
+        const noteId = deepLinkArg.replace("trilium://note/", "");
+        if (mainWindow) {
+            mainWindow.show();
+            mainWindow.webContents.send('open-note', noteId);
+        }
+    }
+});
+
+app.whenReady().then(() => {
+    createWindow();
+    if (process.platform === "win32" || process.platform === "darwin") {
+        app.setAsDefaultProtocolClient("trilium");
+    }
+});
+
+ipcMain.on('open-note', (event, noteId) => {
+    const note = db.prepare("SELECT title, content FROM notes WHERE id=?").get(noteId);
+    event.sender.send('display-note', note);
+});
